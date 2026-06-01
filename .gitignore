@@ -3,5 +3,7 @@
 *.swo
 *~
 node_modules/
+**/.build/
+**/.swiftpm/
 .env
 .claude/settings.local.json
