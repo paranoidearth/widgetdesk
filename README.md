@@ -1,43 +1,44 @@
 # WidgetDesk
 
-> Generate beautiful, interactive macOS desktop widgets with one prompt.
-
-[![macOS](https://img.shields.io/badge/macOS-13%2B-black)](#requirements)
-[![Swift](https://img.shields.io/badge/Swift-6-orange)](apps/macos-host/Package.swift)
-[![OpenAI Compatible](https://img.shields.io/badge/LLM-OpenAI%20compatible-blue)](#configure-your-model)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-
-WidgetDesk is a native macOS app agent for your desktop.
-
-Open a small prompt box, describe the widget you want, and WidgetDesk writes the files, renders it as a transparent desktop window, and keeps it editable. Clocks, pomodoro timers, system cards, sticky notes, tiny controls, playful one-off tools - all generated into local files you can inspect and change.
+> Create macOS desktop widgets with natural language.  
+> 用自然语言生成 macOS 桌面组件。
 
 ![WidgetDesk preview](docs/images/widgetdesk-hero.png)
 
-## Why This Is Cool
+## What It Is / 这是什么
 
-Most AI app builders stop inside a browser tab. WidgetDesk puts the result directly on your Mac desktop.
+WidgetDesk is a standalone macOS app for generating and managing desktop widgets. Open the app, type what you want, and an OpenAI-compatible model will create or edit a local widget.
 
-- Native macOS host: no Electron shell and no external widget daemon.
-- OpenAI-compatible: use OpenAI or any provider that exposes `/v1/chat/completions`.
-- Real files, not magic: every widget is a `widget.json` manifest plus an `index.html`.
-- Local agent harness: the model can list, read, edit, show, and hide components through constrained tools.
-- Desktop-native behavior: widgets can be interactive, draggable, hidden from the menu, and reloaded automatically.
-- Designed for taste: compact macOS-style widgets, translucent surfaces, sane layout defaults.
+WidgetDesk 是一个独立的 macOS 桌面组件应用。打开应用，输入你想要的组件，兼容 OpenAI 格式的模型会在本地创建或修改组件。
 
-## What You Can Ask For
+Widgets are stored here:
+
+组件会保存在：
 
 ```text
-Create a minimal pomodoro timer in the bottom left
-Add a tiny system stats widget in the top right
-Make a glassy clock with date and seconds
-Create a sticky note that remembers what I type
-Hide the pomodoro widget
-Make the weather card darker and smaller
+~/Library/Application Support/WidgetDesk/widgets/
 ```
 
-## Quick Start
+Each widget is a folder with:
 
-Clone the repo and run the native host:
+每个组件是一个文件夹，包含：
+
+```text
+widget.json
+index.html
+```
+
+## Requirements / 环境要求
+
+- macOS 13+
+- Swift 6 / Xcode Command Line Tools
+- An OpenAI-compatible API key
+
+- macOS 13 或更新版本
+- Swift 6 / Xcode 命令行工具
+- 一个兼容 OpenAI 格式的 API Key
+
+## Run The App / 启动应用
 
 ```bash
 git clone https://github.com/paranoidearth/widgetdesk.git
@@ -45,68 +46,51 @@ cd widgetdesk/apps/macos-host
 swift run WidgetDeskHost
 ```
 
-The host opens a small native prompt window. Type what you want, press Return, and WidgetDesk will generate or edit a desktop widget.
+The app will open a small input window. Type a widget request and press Return.
 
-For development, you can also build everything first:
+应用会打开一个小输入框。输入你想要的组件，然后按 Return。
 
-```bash
-cd apps/macos-host
-swift build
-swift run WidgetDeskHost
+Example prompts:
+
+示例：
+
+```text
+Create a pomodoro timer
+Add a clock on the top right
+Make a sticky note widget
+Hide the pomodoro widget
+Make the clock smaller
 ```
 
-## Configure Your Model
+## Configure API Key / 配置 API Key
 
-Open WidgetDesk settings from the app menu or the `WD` menu-bar item.
+Open **Settings** from the app menu or the `WD` menu-bar item.
 
-Set:
+从应用菜单或菜单栏 `WD` 打开 **Settings**。
+
+Fill in:
+
+填写：
 
 ```text
 Base URL: https://api.openai.com/v1
-Model:    gpt-4.1-mini, gpt-4.1, or any compatible model
-API Key:  stored locally in macOS Keychain
+Model:    gpt-4.1-mini or any compatible model
+API Key:  your provider API key
 ```
 
-Any OpenAI-compatible endpoint should work as long as it supports chat completions and tool calls.
+The API key is stored in macOS Keychain.
 
-## The Widget Format
+API Key 会保存在 macOS Keychain 里。
 
-WidgetDesk widgets live here:
+## Manage Widgets / 管理组件
 
-```text
-~/Library/Application Support/WidgetDesk/widgets/
-```
+You can show or hide widgets from the app menu or the `WD` menu-bar menu.
 
-Each widget is a folder:
+你可以在应用菜单或菜单栏 `WD` 菜单里显示或隐藏组件。
 
-```text
-my-widget/
-  widget.json
-  index.html
-```
+You can also use the CLI:
 
-Example manifest:
-
-```json
-{
-  "id": "my-widget",
-  "name": "My Widget",
-  "entry": "index.html",
-  "x": 40,
-  "y": 90,
-  "width": 320,
-  "height": 160,
-  "interactive": false,
-  "visible": true,
-  "anchor": "bottom-right"
-}
-```
-
-`index.html` is a complete self-contained HTML document rendered inside a transparent `WKWebView`.
-
-## CLI
-
-WidgetDesk ships a small CLI for inspecting and managing widgets:
+也可以使用命令行：
 
 ```bash
 cd apps/macos-host
@@ -120,85 +104,34 @@ swift run widgetdesk -- path
 swift run widgetdesk -- doctor
 ```
 
-There is also an offline template planner:
+## Development / 开发
+
+Build:
+
+构建：
+
+```bash
+cd apps/macos-host
+swift build
+```
+
+Run:
+
+运行：
+
+```bash
+swift run WidgetDeskHost
+```
+
+Run the offline template agent:
+
+运行离线模板 agent：
 
 ```bash
 swift run widgetdesk-agent -- add a clock on the top right
 swift run widgetdesk-agent -- create a pomodoro timer bottom left
 ```
 
-The native app path uses the LLM tool agent.
-
-## How It Works
-
-```mermaid
-flowchart LR
-  A["Native prompt window"] --> B["WidgetDeskToolAgent"]
-  B --> C["OpenAI-compatible model"]
-  C --> D["Tool calls"]
-  D --> E["WidgetStore"]
-  E --> F["widget.json + index.html"]
-  F --> G["Transparent WKWebView desktop windows"]
-```
-
-The model never gets arbitrary filesystem access. It can only call a small set of tools:
-
-- `list_components`
-- `read_component_file`
-- `edit_component_file`
-- `set_component_visibility`
-
-`WidgetStore` validates component IDs, scopes file writes to the app-support widget directory, and owns all manifest updates.
-
-## Project Layout
-
-```text
-apps/macos-host/
-  Package.swift
-  Sources/
-    WidgetDeskCore/     # widget manifests, store, settings, templates, LLM tool agent
-    WidgetDeskHost/     # native macOS app, prompt window, settings, menu, widget windows
-    WidgetDeskCLI/      # widget management CLI
-    WidgetDeskAgent/    # offline prompt-to-template entrypoint
-
-docs/
-  architecture/         # migration and architecture notes
-  images/               # README screenshots
-```
-
-The older skill-based workflow is kept only as migration material. The standalone macOS app under `apps/macos-host` is the source of truth.
-
-## Built-In Templates
-
-| Template | Purpose | Default Anchor |
-| --- | --- | --- |
-| `clock` | Time and date card | Bottom right |
-| `pomodoro` | Interactive focus timer | Bottom left |
-| `system-stats` | CPU/memory/battery-style pulse card | Top right |
-| `memo` | Editable sticky note | Top center |
-| `tap-counter` | Interactive persisted counter | Bottom right |
-
-## Roadmap
-
-- Packaged `.app` release builds
-- Widget gallery and one-click installs
-- Better generated-widget preview before placing on desktop
-- Component version history and rollback
-- More host tools for structured component editing
-- Optional local model profiles
-
-## Requirements
-
-- macOS 13+
-- Swift 6 toolchain / Xcode command line tools
-- An OpenAI-compatible API key for generation
-
-## Status
-
-WidgetDesk is early, fast-moving, and meant for people who like building their own desktop. Expect rough edges, but the core loop is already here:
-
-prompt -> local files -> desktop widget -> refine -> keep.
-
-## License
+## License / 许可证
 
 MIT
