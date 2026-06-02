@@ -36,6 +36,8 @@ The host now uses `WidgetDeskToolAgent`, a small OpenAI-compatible tool-loop har
 
 The previous Übersicht skill constraints were migrated as product rules rather than copied literally. The new prompt preserves the useful parts: compact dimensions, Dock-safe bottom spacing, restrained macOS glass styling, display-only pointer behavior, interactive-state guidance, localStorage persistence, no secrets, no external assets, and no permission-triggering browser APIs by default. Übersicht-only JSX rules, such as `import { React } from 'uebersicht'`, do not apply to the standalone WKWebView HTML runtime.
 
+See `docs/apple-api-reference.md` for the AppKit, WebKit, Keychain, App Intents, URL scheme, and global-hotkey checklist required to replicate the native host experience.
+
 ## Provider Settings
 
 `WidgetDeskHost` includes a Settings dialog for OpenAI-compatible providers:
