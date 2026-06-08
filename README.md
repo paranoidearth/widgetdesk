@@ -196,6 +196,15 @@ Run the offline template agent:
 swift run widgetdesk-agent -- add a clock on the top right
 ```
 
+Package a local `.app` bundle:
+
+```bash
+./scripts/package-app.sh
+open dist/WidgetDesk.app
+```
+
+The package script creates an ad-hoc signed app for local testing. Release signing and notarization are separate steps.
+
 ## Architecture
 
 The Swift package is split into four targets:
