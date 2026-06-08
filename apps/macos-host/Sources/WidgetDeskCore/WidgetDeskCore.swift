@@ -11,6 +11,26 @@ public enum WidgetDeskPaths {
     public static let sampleWidget = widgets.appendingPathComponent("sample-clock", isDirectory: true)
 }
 
+public struct WidgetDeskPathSet: Equatable, Sendable {
+    public var appSupport: URL
+    public var widgets: URL
+    public var sessions: URL
+
+    public init(appSupport: URL) {
+        self.appSupport = appSupport
+        widgets = appSupport.appendingPathComponent("widgets", isDirectory: true)
+        sessions = appSupport.appendingPathComponent("sessions", isDirectory: true)
+    }
+
+    public init(appSupport: URL, widgets: URL, sessions: URL) {
+        self.appSupport = appSupport
+        self.widgets = widgets
+        self.sessions = sessions
+    }
+
+    public static let `default` = WidgetDeskPathSet(appSupport: WidgetDeskPaths.appSupport)
+}
+
 public enum WidgetAnchor: String, Codable, CaseIterable, Sendable {
     case topLeft = "top-left"
     case topCenter = "top-center"
@@ -105,11 +125,15 @@ public enum WidgetDeskError: Error, CustomStringConvertible {
 }
 
 public struct WidgetStore: Sendable {
-    public init() {}
+    public let paths: WidgetDeskPathSet
+
+    public init(paths: WidgetDeskPathSet = .default) {
+        self.paths = paths
+    }
 
     public func ensureBaseDirectories() throws {
-        try FileManager.default.createDirectory(at: WidgetDeskPaths.widgets, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: WidgetDeskPaths.sessions, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: paths.widgets, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: paths.sessions, withIntermediateDirectories: true)
     }
 
     public func ensureSampleWidget() throws {
@@ -118,10 +142,15 @@ public struct WidgetStore: Sendable {
         try createWidget(from: sample, overwrite: false)
     }
 
+    public func widgetDirectoryPath() throws -> String {
+        try ensureBaseDirectories()
+        return paths.widgets.path
+    }
+
     public func loadWidgets(includeHidden: Bool = false) throws -> [WidgetInstance] {
         try ensureBaseDirectories()
         let directories = try FileManager.default.contentsOfDirectory(
-            at: WidgetDeskPaths.widgets,
+            at: paths.widgets,
             includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
             options: [.skipsHiddenFiles]
         )
@@ -190,7 +219,7 @@ public struct WidgetStore: Sendable {
         }
 
         try ensureBaseDirectories()
-        let destination = WidgetDeskPaths.widgets.appendingPathComponent(manifest.id, isDirectory: true)
+        let destination = paths.widgets.appendingPathComponent(manifest.id, isDirectory: true)
         if FileManager.default.fileExists(atPath: destination.path) {
             guard overwrite else {
                 throw WidgetDeskError.installDestinationExists(destination)
@@ -207,7 +236,7 @@ public struct WidgetStore: Sendable {
         try validateWidgetID(draft.manifest.id)
         try ensureBaseDirectories()
 
-        let directory = WidgetDeskPaths.widgets.appendingPathComponent(draft.manifest.id, isDirectory: true)
+        let directory = paths.widgets.appendingPathComponent(draft.manifest.id, isDirectory: true)
         if FileManager.default.fileExists(atPath: directory.path) {
             guard overwrite else {
                 return try findWidget(draft.manifest.id)

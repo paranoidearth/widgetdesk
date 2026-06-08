@@ -1295,8 +1295,67 @@ private final class WidgetDeskHostApp {
     }
 }
 
+@MainActor
+private enum WidgetDeskAppIcon {
+    static func makeImage(size: CGFloat = 512) -> NSImage {
+        let image = NSImage(size: NSSize(width: size, height: size))
+        image.lockFocus()
+        defer { image.unlockFocus() }
+
+        let rect = NSRect(x: 0, y: 0, width: size, height: size)
+        NSColor.clear.setFill()
+        rect.fill()
+
+        let shadow = NSShadow()
+        shadow.shadowBlurRadius = size * 0.055
+        shadow.shadowOffset = NSSize(width: 0, height: -size * 0.018)
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.24)
+        shadow.set()
+
+        let tileRect = rect.insetBy(dx: size * 0.09, dy: size * 0.09)
+        let tilePath = NSBezierPath(roundedRect: tileRect, xRadius: size * 0.18, yRadius: size * 0.18)
+        let gradient = NSGradient(colors: [
+            NSColor(calibratedRed: 0.12, green: 0.18, blue: 0.24, alpha: 1),
+            NSColor(calibratedRed: 0.06, green: 0.09, blue: 0.12, alpha: 1)
+        ])
+        gradient?.draw(in: tilePath, angle: 315)
+
+        NSGraphicsContext.current?.shouldAntialias = true
+        NSColor(calibratedRed: 0.53, green: 0.95, blue: 0.86, alpha: 1).setStroke()
+        let widgetPath = NSBezierPath(roundedRect: tileRect.insetBy(dx: size * 0.16, dy: size * 0.19), xRadius: size * 0.06, yRadius: size * 0.06)
+        widgetPath.lineWidth = size * 0.024
+        widgetPath.stroke()
+
+        NSColor.white.withAlphaComponent(0.92).setFill()
+        let dotRadius = size * 0.018
+        for row in 0..<2 {
+            for column in 0..<3 {
+                let x = size * 0.39 + CGFloat(column) * size * 0.09
+                let y = size * 0.44 + CGFloat(row) * size * 0.075
+                NSBezierPath(ovalIn: NSRect(x: x, y: y, width: dotRadius, height: dotRadius)).fill()
+            }
+        }
+
+        NSColor(calibratedRed: 0.53, green: 0.95, blue: 0.86, alpha: 1).setFill()
+        let sparkle = NSBezierPath()
+        sparkle.move(to: NSPoint(x: size * 0.68, y: size * 0.75))
+        sparkle.line(to: NSPoint(x: size * 0.71, y: size * 0.66))
+        sparkle.line(to: NSPoint(x: size * 0.80, y: size * 0.63))
+        sparkle.line(to: NSPoint(x: size * 0.71, y: size * 0.60))
+        sparkle.line(to: NSPoint(x: size * 0.68, y: size * 0.51))
+        sparkle.line(to: NSPoint(x: size * 0.65, y: size * 0.60))
+        sparkle.line(to: NSPoint(x: size * 0.56, y: size * 0.63))
+        sparkle.line(to: NSPoint(x: size * 0.65, y: size * 0.66))
+        sparkle.close()
+        sparkle.fill()
+
+        return image
+    }
+}
+
 let app = NSApplication.shared
 app.setActivationPolicy(.regular)
+app.applicationIconImage = WidgetDeskAppIcon.makeImage()
 
 do {
     let host = WidgetDeskHostApp()

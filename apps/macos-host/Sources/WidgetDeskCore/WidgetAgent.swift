@@ -35,8 +35,7 @@ public struct WidgetDeskAgent: Sendable {
                 widgets: widgets
             )
         case .path:
-            try store.ensureBaseDirectories()
-            return AgentRunResult(action: .path, message: WidgetDeskPaths.widgets.path, widgets: [])
+            return AgentRunResult(action: .path, message: try store.widgetDirectoryPath(), widgets: [])
         case .show(let id):
             let widget = try store.setVisibility(id: id, visible: true)
             return AgentRunResult(action: .show(id: id), message: "Show \(id)", widgets: [widget.manifest])

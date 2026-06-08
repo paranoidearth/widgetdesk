@@ -16,6 +16,10 @@ let package = Package(
         .target(
             name: "WidgetDeskCore"
         ),
+        .testTarget(
+            name: "WidgetDeskCoreTests",
+            dependencies: ["WidgetDeskCore"]
+        ),
         .executableTarget(
             name: "WidgetDeskHost",
             dependencies: ["WidgetDeskCore"]
