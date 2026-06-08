@@ -1239,8 +1239,7 @@ private final class WidgetDeskHostApp {
                 let result = try await WidgetDeskToolAgent(settingsStore: settingsStore, store: store).run(prompt: prompt)
                 reloadWidgets()
                 assistant?.setBusy(false)
-                let changed = result.changedWidgetIDs.first ?? "widget"
-                assistant?.setStatus("Updated \(changed) as \(changed).")
+                assistant?.setStatus(result.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Updated widget." : result.message)
             } catch let error as CustomStringConvertible {
                 assistant?.setBusy(false)
                 assistant?.setStatus(error.description)

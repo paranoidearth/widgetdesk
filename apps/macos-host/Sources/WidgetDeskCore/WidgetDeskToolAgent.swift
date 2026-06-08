@@ -44,7 +44,7 @@ public struct WidgetDeskToolAgent: Sendable {
         settingsStore: WidgetDeskSettingsStore = WidgetDeskSettingsStore(),
         store: WidgetStore = WidgetStore(),
         session: URLSession = .shared,
-        maxTurns: Int = 8
+        maxTurns: Int = 4
     ) {
         self.settingsStore = settingsStore
         self.store = store
@@ -85,6 +85,13 @@ public struct WidgetDeskToolAgent: Sendable {
                     toolCallID: toolCall.id
                 ))
             }
+        }
+
+        if !changedWidgetIDs.isEmpty {
+            return WidgetDeskToolAgentResult(
+                message: "Updated \(changedWidgetIDs.sorted().joined(separator: ", ")).",
+                changedWidgetIDs: changedWidgetIDs.sorted()
+            )
         }
 
         throw WidgetDeskToolAgentError.exceededTurnLimit
