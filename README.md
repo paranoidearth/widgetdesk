@@ -1,12 +1,18 @@
-# WidgetDesk
+<p align="center">
+  <img src="docs/images/widgetdesk-wordmark.svg" alt="WidgetDesk" width="720">
+</p>
 
-> Generate and manage native macOS desktop widgets with natural language.  
-> 用自然语言生成和管理 macOS 桌面组件。
+<p align="center">
+  <strong>Generate and manage native macOS desktop widgets with natural language.</strong><br>
+  用自然语言生成和管理 macOS 桌面组件。
+</p>
 
-[![MIT License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-![macOS 13+](https://img.shields.io/badge/macOS-13%2B-blue.svg)
-![Swift 6](https://img.shields.io/badge/Swift-6-orange.svg)
-![Status](https://img.shields.io/badge/status-early%20preview-yellow.svg)
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/macOS-13%2B-blue.svg" alt="macOS 13+">
+  <img src="https://img.shields.io/badge/Swift-6-orange.svg" alt="Swift 6">
+  <img src="https://img.shields.io/badge/status-early%20preview-yellow.svg" alt="Early preview">
+</p>
 
 ![WidgetDesk preview](docs/images/widgetdesk-hero.png)
 
