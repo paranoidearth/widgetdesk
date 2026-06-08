@@ -1,15 +1,10 @@
-# Independent App Agent MVP
+# Native Host MVP
 
-WidgetDesk has moved from an agent-skill packaging model to a standalone macOS app-agent runtime with a native prompt dialog.
+WidgetDesk is a standalone macOS desktop widget app with a native prompt dialog and a local file-backed widget runtime.
 
 ## Goal
 
-Run and create desktop widgets without depending on:
-
-- Uebersicht
-- Claude Code skills
-- Codex skills
-- OpenClaw plugins or gateways
+Run and create desktop widgets through a native macOS host. The app should own widget storage, rendering, settings, reload behavior, and model-driven edits without requiring an external widget host.
 
 ## Runtime
 
@@ -34,7 +29,7 @@ The host now uses `WidgetDeskToolAgent`, a small OpenAI-compatible tool-loop har
 
 `WidgetIntentPlanner` remains as an offline CLI template planner. `OpenAIWidgetGenerator` remains as the older one-shot JSON generator, but the host generation path uses the tool agent.
 
-The previous Übersicht skill constraints were migrated as product rules rather than copied literally. The new prompt preserves the useful parts: compact dimensions, Dock-safe bottom spacing, restrained macOS glass styling, display-only pointer behavior, interactive-state guidance, localStorage persistence, no secrets, no external assets, and no permission-triggering browser APIs by default. Übersicht-only JSX rules, such as `import { React } from 'uebersicht'`, do not apply to the standalone WKWebView HTML runtime.
+Generated widgets should stay compact, Dock-safe, visually restrained, and local-first. Display-only widgets should avoid intercepting pointer events except for host-managed drag handles. Interactive widgets may use `localStorage` for tiny state. Generated HTML should avoid secrets, external assets, and permission-triggering browser APIs by default.
 
 See `docs/apple-api-reference.md` for the AppKit, WebKit, Keychain, App Intents, URL scheme, and global-hotkey checklist required to replicate the native host experience.
 
