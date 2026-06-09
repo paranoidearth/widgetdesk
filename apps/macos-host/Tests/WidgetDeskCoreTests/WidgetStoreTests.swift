@@ -95,6 +95,76 @@ struct WidgetDeskAgentTests {
     }
 }
 
+@Suite("WidgetComponentValidator")
+struct WidgetComponentValidatorTests {
+    @Test("accepts complete local HTML widgets")
+    func acceptsValidWidget() throws {
+        let fixture = try TestFixture()
+        defer { fixture.cleanup() }
+
+        try fixture.writeWidget(
+            id: "valid-widget",
+            html: """
+            <!doctype html>
+            <html>
+            <head><meta charset="utf-8"><style>body { margin: 0; background: transparent; }</style></head>
+            <body><main class="card">Ready</main></body>
+            </html>
+            """
+        )
+
+        let report = WidgetComponentValidator(store: fixture.store).validate(ids: ["valid-widget"])
+        #expect(report.isReady)
+        #expect(report.validIDs == ["valid-widget"])
+        #expect(report.issues.isEmpty)
+    }
+
+    @Test("rejects external resources in generated HTML")
+    func rejectsExternalResources() throws {
+        let fixture = try TestFixture()
+        defer { fixture.cleanup() }
+
+        try fixture.writeWidget(
+            id: "remote-widget",
+            html: """
+            <!doctype html>
+            <html>
+            <body><script src="https://cdn.example.com/app.js"></script></body>
+            </html>
+            """
+        )
+
+        let report = WidgetComponentValidator(store: fixture.store).validate(ids: ["remote-widget"])
+        #expect(!report.isReady)
+        #expect(report.issues.contains { $0.contains("must not load external") })
+    }
+
+    @Test("rejects missing entry files")
+    func rejectsMissingEntryFile() throws {
+        let fixture = try TestFixture()
+        defer { fixture.cleanup() }
+
+        let directory = fixture.paths.widgets.appendingPathComponent("missing-entry", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try fixture.store.writeManifest(
+            WidgetManifest(
+                id: "missing-entry",
+                name: "Missing Entry",
+                x: 20,
+                y: 20,
+                width: 240,
+                height: 120,
+                interactive: false
+            ),
+            in: directory
+        )
+
+        let report = WidgetComponentValidator(store: fixture.store).validate(ids: ["missing-entry"])
+        #expect(!report.isReady)
+        #expect(report.issues.contains { $0.contains("entry file is missing") })
+    }
+}
+
 private struct TestFixture {
     let root: URL
     let paths: WidgetDeskPathSet
@@ -110,5 +180,23 @@ private struct TestFixture {
 
     func cleanup() {
         try? FileManager.default.removeItem(at: root)
+    }
+
+    func writeWidget(id: String, html: String, width: Double = 240, height: Double = 120) throws {
+        let directory = paths.widgets.appendingPathComponent(id, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try store.writeManifest(
+            WidgetManifest(
+                id: id,
+                name: id,
+                x: 20,
+                y: 20,
+                width: width,
+                height: height,
+                interactive: false
+            ),
+            in: directory
+        )
+        try html.write(to: directory.appendingPathComponent("index.html"), atomically: true, encoding: .utf8)
     }
 }

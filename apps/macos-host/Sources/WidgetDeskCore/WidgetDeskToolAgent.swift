@@ -37,6 +37,7 @@ public enum WidgetDeskToolAgentError: Error, CustomStringConvertible {
 public struct WidgetDeskToolAgent: Sendable {
     private let settingsStore: WidgetDeskSettingsStore
     private let store: WidgetStore
+    private let validator: WidgetComponentValidator
     private let session: URLSession
     private let maxTurns: Int
 
@@ -44,10 +45,11 @@ public struct WidgetDeskToolAgent: Sendable {
         settingsStore: WidgetDeskSettingsStore = WidgetDeskSettingsStore(),
         store: WidgetStore = WidgetStore(),
         session: URLSession = .shared,
-        maxTurns: Int = 4
+        maxTurns: Int = 8
     ) {
         self.settingsStore = settingsStore
         self.store = store
+        self.validator = WidgetComponentValidator(store: store)
         self.session = session
         self.maxTurns = maxTurns
     }
@@ -70,10 +72,25 @@ public struct WidgetDeskToolAgent: Sendable {
             messages.append(assistant)
 
             guard let toolCalls = assistant.toolCalls, !toolCalls.isEmpty else {
-                return WidgetDeskToolAgentResult(
-                    message: assistant.content ?? "Done.",
-                    changedWidgetIDs: changedWidgetIDs.sorted()
-                )
+                guard !changedWidgetIDs.isEmpty else {
+                    return WidgetDeskToolAgentResult(
+                        message: assistant.content ?? "Done.",
+                        changedWidgetIDs: []
+                    )
+                }
+
+                let validation = validator.validate(ids: changedWidgetIDs)
+                if validation.isReady {
+                    return WidgetDeskToolAgentResult(
+                        message: "Updated \(validation.validIDs.joined(separator: ", ")). Validation passed.",
+                        changedWidgetIDs: validation.validIDs
+                    )
+                }
+                messages.append(ToolAgentMessage(
+                    role: "user",
+                    content: "WidgetDesk validation failed. Fix the component files with tool calls before finishing:\n\(validation.summary)"
+                ))
+                continue
             }
 
             for toolCall in toolCalls {
@@ -85,12 +102,27 @@ public struct WidgetDeskToolAgent: Sendable {
                     toolCallID: toolCall.id
                 ))
             }
+
+            let validation = validator.validate(ids: changedWidgetIDs)
+            if validation.isReady {
+                return WidgetDeskToolAgentResult(
+                    message: "Updated \(validation.validIDs.joined(separator: ", ")). Validation passed.",
+                    changedWidgetIDs: validation.validIDs
+                )
+            }
+            if !validation.issues.isEmpty {
+                messages.append(ToolAgentMessage(
+                    role: "user",
+                    content: "WidgetDesk validation failed. Fix the component files before finishing:\n\(validation.summary)"
+                ))
+            }
         }
 
-        if !changedWidgetIDs.isEmpty {
+        let validation = validator.validate(ids: changedWidgetIDs)
+        if validation.isReady {
             return WidgetDeskToolAgentResult(
-                message: "Updated \(changedWidgetIDs.sorted().joined(separator: ", ")).",
-                changedWidgetIDs: changedWidgetIDs.sorted()
+                message: "Updated \(validation.validIDs.joined(separator: ", ")). Validation passed.",
+                changedWidgetIDs: validation.validIDs
             )
         }
 
@@ -249,7 +281,7 @@ public struct WidgetDeskToolAgent: Sendable {
         }
 
         try store.ensureBaseDirectories()
-        let directory = WidgetDeskPaths.widgets.appendingPathComponent(id, isDirectory: true)
+        let directory = store.paths.widgets.appendingPathComponent(id, isDirectory: true)
         if createDirectory {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         }
@@ -283,6 +315,104 @@ public struct WidgetDeskToolAgent: Sendable {
     }
 }
 
+struct WidgetComponentValidationReport: Equatable, Sendable {
+    var validIDs: [String]
+    var issues: [String]
+
+    var isReady: Bool {
+        !validIDs.isEmpty && issues.isEmpty
+    }
+
+    var summary: String {
+        if issues.isEmpty {
+            return "Validation passed for \(validIDs.joined(separator: ", "))."
+        }
+        return issues.joined(separator: "\n")
+    }
+}
+
+struct WidgetComponentValidator: Sendable {
+    private let store: WidgetStore
+
+    init(store: WidgetStore = WidgetStore()) {
+        self.store = store
+    }
+
+    func validate(ids: Set<String>) -> WidgetComponentValidationReport {
+        var validIDs: [String] = []
+        var issues: [String] = []
+
+        for id in ids.sorted() {
+            do {
+                let directory = store.paths.widgets.appendingPathComponent(id, isDirectory: true)
+                let manifest = try store.loadManifest(in: directory)
+                let widget = WidgetInstance(directory: directory, manifest: manifest)
+                let widgetIssues = try validate(widget: widget)
+                if widgetIssues.isEmpty {
+                    validIDs.append(id)
+                } else {
+                    issues.append(contentsOf: widgetIssues.map { "\(id): \($0)" })
+                }
+            } catch {
+                issues.append("\(id): \(error.localizedDescription)")
+            }
+        }
+
+        return WidgetComponentValidationReport(validIDs: validIDs, issues: issues)
+    }
+
+    private func validate(widget: WidgetInstance) throws -> [String] {
+        var issues: [String] = []
+        let manifest = widget.manifest
+
+        if manifest.entry.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            issues.append("manifest.entry is empty")
+        }
+        if manifest.width < 80 || manifest.width > 900 {
+            issues.append("manifest.width must be between 80 and 900")
+        }
+        if manifest.height < 48 || manifest.height > 700 {
+            issues.append("manifest.height must be between 48 and 700")
+        }
+        if manifest.x < 0 || manifest.y < 0 {
+            issues.append("manifest.x and manifest.y must be non-negative")
+        }
+
+        guard FileManager.default.fileExists(atPath: widget.entryURL.path) else {
+            issues.append("entry file is missing: \(manifest.entry)")
+            return issues
+        }
+
+        let html = try String(contentsOf: widget.entryURL, encoding: .utf8)
+        issues.append(contentsOf: validateHTML(html))
+        return issues
+    }
+
+    private func validateHTML(_ html: String) -> [String] {
+        let lower = html.lowercased()
+        var issues: [String] = []
+
+        if !lower.contains("<!doctype html") && !lower.contains("<html") {
+            issues.append("index.html must be a complete HTML document")
+        }
+        if !lower.contains("<body") {
+            issues.append("index.html must include a body element")
+        }
+        if lower.contains("src=\"http://") || lower.contains("src=\"https://") ||
+            lower.contains("src='http://") || lower.contains("src='https://") ||
+            lower.contains("href=\"http://") || lower.contains("href=\"https://") ||
+            lower.contains("href='http://") || lower.contains("href='https://") ||
+            lower.contains("@import url(") {
+            issues.append("index.html must not load external scripts, styles, fonts, images, or links")
+        }
+        if html.count < 80 {
+            issues.append("index.html is too small to be a complete widget")
+        }
+
+        return issues
+    }
+}
+
 private extension WidgetDeskToolAgent {
     static let systemPrompt = """
     You are WidgetDesk's local component agent. Work by calling tools, not by inventing unseen files.
@@ -295,6 +425,8 @@ private extension WidgetDeskToolAgent {
     Rules:
     - For existing components, call list_components first, then read_component_file before editing.
     - For new components, call edit_component_file for widget.json and index.html.
+    - WidgetDesk widgets are HTML components, not Swift, Vue, or React projects. The completion baseline is that widget.json decodes and the entry HTML is complete, local-only, and loadable by WKWebView.
+    - Do not finish with plain text after editing. Continue using tools until validation accepts the changed component.
     - Always write lowercase kebab-case component ids.
     - Keep component HTML self-contained: no external scripts, fonts, images, or network resources.
     - Use transparent html/body backgrounds unless the user asks otherwise:
