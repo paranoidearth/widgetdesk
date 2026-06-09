@@ -10,6 +10,7 @@ DIST_DIR="$ROOT_DIR/dist"
 APP_DIR="$DIST_DIR/$APP_NAME.app"
 ZIP_PATH="$DIST_DIR/$APP_NAME.zip"
 ICON_PATH="$RESOURCES_DIR/AppIcon.icns"
+VENDOR_PATH="$HOST_DIR/Sources/WidgetDeskCore/Resources/Vendor"
 
 if [[ ! -f "$ICON_PATH" ]]; then
   "$ROOT_DIR/scripts/generate-app-icon.sh"
@@ -23,6 +24,9 @@ mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 
 cp "$BIN_DIR/WidgetDeskHost" "$APP_DIR/Contents/MacOS/$APP_NAME"
 cp "$ICON_PATH" "$APP_DIR/Contents/Resources/AppIcon.icns"
+if [[ -d "$VENDOR_PATH" ]]; then
+  cp -R "$VENDOR_PATH" "$APP_DIR/Contents/Resources/Vendor"
+fi
 
 cat >"$APP_DIR/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

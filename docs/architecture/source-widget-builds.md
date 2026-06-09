@@ -24,6 +24,17 @@ The tool agent exposes `build_component`. It requires `source/main.js`, generate
 
 This gives the LLM a cleaner target for larger JavaScript widgets, including Three.js-style scenes, without asking it to paste everything into one HTML file.
 
+Source builds also receive WidgetDesk's curated local vendor bundle under `vendor/`. The first curated runtime is Rapier 3D:
+
+```js
+import RAPIER from '../vendor/rapier/rapier.es.js';
+
+await RAPIER.init();
+const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+```
+
+Physical scenes should use Rapier for gravity, rigid bodies, colliders, contacts, and settling instead of prompt-authored coordinate rules.
+
 ## Dependency Policy
 
 The exploratory implementation does not run npm or install packages. Network dependencies are intentionally rejected by validation.
@@ -32,7 +43,7 @@ Allowed:
 
 - Relative imports from local widget files.
 - Local files under `source/`, `dist/`, or `vendor/`.
-- A future curated vendor bundle shipped by WidgetDesk.
+- The curated vendor bundle shipped by WidgetDesk, currently including `vendor/rapier`.
 
 Rejected:
 

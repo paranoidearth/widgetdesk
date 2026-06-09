@@ -202,6 +202,9 @@ struct WidgetComponentValidatorTests {
                 .appendingPathComponent("dist/index.html"),
             encoding: .utf8
         )
+        let rapier = fixture.paths.widgets
+            .appendingPathComponent("source-widget", isDirectory: true)
+            .appendingPathComponent("vendor/rapier/rapier.es.js")
         let report = WidgetComponentValidator(store: fixture.store).validate(ids: ["source-widget"])
 
         #expect(build.entry == "dist/index.html")
@@ -209,6 +212,7 @@ struct WidgetComponentValidatorTests {
         #expect(manifest.interactive)
         #expect(index.contains("WidgetDeskOrbit"))
         #expect(index.contains("widgetdesk:orbit-change"))
+        #expect(FileManager.default.fileExists(atPath: rapier.path))
         #expect(report.isReady)
     }
 

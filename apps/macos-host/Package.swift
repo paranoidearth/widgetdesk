@@ -14,7 +14,10 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "WidgetDeskCore"
+            name: "WidgetDeskCore",
+            resources: [
+                .copy("Resources")
+            ]
         ),
         .testTarget(
             name: "WidgetDeskCoreTests",

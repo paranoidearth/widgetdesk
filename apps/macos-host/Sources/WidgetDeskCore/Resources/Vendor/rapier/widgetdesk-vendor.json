@@ -1,0 +1,8 @@
+{
+  "name": "@dimforge/rapier3d-compat",
+  "version": "0.19.3",
+  "license": "Apache-2.0",
+  "homepage": "https://rapier.rs",
+  "repository": "https://github.com/dimforge/rapier.js",
+  "source": "npm:@dimforge/rapier3d-compat@0.19.3/rapier.mjs"
+}

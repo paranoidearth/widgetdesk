@@ -347,22 +347,22 @@ public struct WidgetDeskToolAgent: Sendable {
     }
 }
 
-struct WidgetComponentBuildReport: Codable, Equatable, Sendable {
-    var ok: Bool
-    var id: String
-    var entry: String
-    var generatedFiles: [String]
-    var message: String
+public struct WidgetComponentBuildReport: Codable, Equatable, Sendable {
+    public var ok: Bool
+    public var id: String
+    public var entry: String
+    public var generatedFiles: [String]
+    public var message: String
 }
 
-struct WidgetComponentBuilder: Sendable {
+public struct WidgetComponentBuilder: Sendable {
     private let store: WidgetStore
 
-    init(store: WidgetStore = WidgetStore()) {
+    public init(store: WidgetStore = WidgetStore()) {
         self.store = store
     }
 
-    func build(id: String) throws -> WidgetComponentBuildReport {
+    public func build(id: String) throws -> WidgetComponentBuildReport {
         try validateComponentID(id)
         try store.ensureBaseDirectories()
 
@@ -378,6 +378,7 @@ struct WidgetComponentBuilder: Sendable {
 
         let dist = directory.appendingPathComponent("dist", isDirectory: true)
         try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+        let installedVendorFiles = try installCuratedVendorBundle(in: directory)
 
         let styleTag = FileManager.default.fileExists(atPath: style.path)
             ? #"    <link rel="stylesheet" href="../source/style.css">"#
@@ -425,7 +426,7 @@ struct WidgetComponentBuilder: Sendable {
             ok: true,
             id: id,
             entry: manifest.entry,
-            generatedFiles: ["dist/index.html", "widget.json"],
+            generatedFiles: ["dist/index.html", "widget.json"] + installedVendorFiles,
             message: "Built source/main.js into dist/index.html."
         )
     }
@@ -435,6 +436,39 @@ struct WidgetComponentBuilder: Sendable {
         guard !id.isEmpty, id.rangeOfCharacter(from: allowed.inverted) == nil else {
             throw WidgetDeskError.invalidWidgetID(id)
         }
+    }
+
+    private func installCuratedVendorBundle(in directory: URL) throws -> [String] {
+        let manager = FileManager.default
+        guard let source = Self.rapierVendorSource else {
+            return []
+        }
+
+        let vendor = directory
+            .appendingPathComponent("vendor", isDirectory: true)
+            .appendingPathComponent("rapier", isDirectory: true)
+        if manager.fileExists(atPath: vendor.path) {
+            try manager.removeItem(at: vendor)
+        }
+        try manager.createDirectory(at: vendor.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try manager.copyItem(at: source, to: vendor)
+        return [
+            "vendor/rapier/rapier.es.js",
+            "vendor/rapier/widgetdesk-vendor.json"
+        ]
+    }
+
+    private static var rapierVendorSource: URL? {
+        let candidates = [
+            Bundle.main.resourceURL?.appendingPathComponent("Vendor/rapier", isDirectory: true),
+            Bundle.module.resourceURL?.appendingPathComponent("Resources/Vendor/rapier", isDirectory: true),
+            Bundle.module.resourceURL?.appendingPathComponent("Vendor/rapier", isDirectory: true),
+            URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .appendingPathComponent("Resources/Vendor/rapier", isDirectory: true)
+        ].compactMap { $0 }
+
+        return candidates.first { FileManager.default.fileExists(atPath: $0.appendingPathComponent("rapier.es.js").path) }
     }
 
     private static let orbitRuntime = #"""
@@ -589,6 +623,7 @@ struct WidgetComponentBuilder: Sendable {
         apply();
     })();
     """#
+
 }
 
 struct WidgetComponentValidationReport: Equatable, Sendable {
@@ -736,6 +771,7 @@ private extension WidgetDeskToolAgent {
     - WidgetDesk widgets are HTML components, not Swift, Vue, or React projects. The completion baseline is that widget.json decodes and the entry HTML is complete, local-only, and loadable by WKWebView.
     - For complex JavaScript or Three.js-style components, write source/main.js and optional source/style.css, then call build_component. The build step creates dist/index.html, updates widget.json entry, marks the component interactive, and wraps #app in WidgetDesk's built-in orbit viewport.
     - Source-built scene components already support system-level drag-to-rotate, wheel/pinch zoom, double-click reset, CSS variables, and a window.WidgetDeskOrbit API. Do not hand-roll pointer handlers for basic orbit controls. If using a custom renderer, subscribe to window.WidgetDeskOrbit or the widgetdesk:orbit-change event.
+    - For physical scenes, use the local Rapier vendor bundle copied into vendor/rapier by build_component. Import ../vendor/rapier/rapier.es.js from source/main.js and let Rapier own gravity, rigid bodies, colliders, contacts, and settling. Do not fake physics with prompt-authored coordinate rules.
     - Do not use npm, package managers, CDNs, or external URLs. If a library is needed, it must be supplied as local files under vendor/ and imported by relative path.
     - Do not finish with plain text after editing. Continue using tools until validation accepts the changed component.
     - Always write lowercase kebab-case component ids.

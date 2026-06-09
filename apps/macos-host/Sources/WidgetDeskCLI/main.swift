@@ -6,6 +6,7 @@ Usage:
   widgetdesk list
   widgetdesk install <widget-directory> [--overwrite]
   widgetdesk create <template> [widget-id]
+  widgetdesk build <widget-id>
   widgetdesk agent <prompt...>
   widgetdesk show <widget-id>
   widgetdesk hide <widget-id>
@@ -68,6 +69,12 @@ private func run() throws {
         let id = args.dropFirst().first ?? template.rawValue
         let widget = try store.createWidget(from: template.draft(id: id, prompt: templateName), overwrite: true)
         print("Created \(widget.manifest.id) -> \(widget.directory.path)")
+    case "build":
+        guard let id = args.first else {
+            throw CLIError.usage
+        }
+        let result = try WidgetComponentBuilder(store: store).build(id: id)
+        print("\(result.message) Entry: \(result.entry)")
     case "agent", "ask":
         guard !args.isEmpty else {
             throw CLIError.usage
