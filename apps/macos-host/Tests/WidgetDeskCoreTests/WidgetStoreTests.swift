@@ -163,6 +163,72 @@ struct WidgetComponentValidatorTests {
         #expect(!report.isReady)
         #expect(report.issues.contains { $0.contains("entry file is missing") })
     }
+
+    @Test("accepts source widgets after build")
+    func acceptsBuiltSourceWidget() throws {
+        let fixture = try TestFixture()
+        defer { fixture.cleanup() }
+
+        try fixture.writeWidget(
+            id: "source-widget",
+            html: "<!doctype html><html><body>placeholder entry before build</body></html>",
+            width: 320,
+            height: 220
+        )
+        try fixture.writeFile(
+            id: "source-widget",
+            path: "source/main.js",
+            content: """
+            const root = document.getElementById('app');
+            root.innerHTML = '<section class="scene">Source widget ready</section>';
+            """
+        )
+        try fixture.writeFile(
+            id: "source-widget",
+            path: "source/style.css",
+            content: """
+            body { color: white; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+            .scene { width: 100%; height: 100%; display: grid; place-items: center; }
+            """
+        )
+
+        let build = try WidgetComponentBuilder(store: fixture.store).build(id: "source-widget")
+        let manifest = try fixture.store.loadManifest(
+            in: fixture.paths.widgets.appendingPathComponent("source-widget", isDirectory: true)
+        )
+        let report = WidgetComponentValidator(store: fixture.store).validate(ids: ["source-widget"])
+
+        #expect(build.entry == "dist/index.html")
+        #expect(manifest.entry == "dist/index.html")
+        #expect(report.isReady)
+    }
+
+    @Test("rejects external resources in source files")
+    func rejectsExternalResourcesInSourceFiles() throws {
+        let fixture = try TestFixture()
+        defer { fixture.cleanup() }
+
+        try fixture.writeWidget(
+            id: "remote-source-widget",
+            html: "<!doctype html><html><body>placeholder entry before build</body></html>",
+            width: 320,
+            height: 220
+        )
+        try fixture.writeFile(
+            id: "remote-source-widget",
+            path: "source/main.js",
+            content: """
+            import * as THREE from 'https://cdn.example.com/three.module.js';
+            document.getElementById('app').textContent = THREE.REVISION;
+            """
+        )
+
+        _ = try WidgetComponentBuilder(store: fixture.store).build(id: "remote-source-widget")
+        let report = WidgetComponentValidator(store: fixture.store).validate(ids: ["remote-source-widget"])
+
+        #expect(!report.isReady)
+        #expect(report.issues.contains { $0.contains("source/main.js must not reference external") })
+    }
 }
 
 private struct TestFixture {
@@ -198,5 +264,11 @@ private struct TestFixture {
             in: directory
         )
         try html.write(to: directory.appendingPathComponent("index.html"), atomically: true, encoding: .utf8)
+    }
+
+    func writeFile(id: String, path: String, content: String) throws {
+        let url = paths.widgets.appendingPathComponent(id, isDirectory: true).appendingPathComponent(path)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try content.write(to: url, atomically: true, encoding: .utf8)
     }
 }

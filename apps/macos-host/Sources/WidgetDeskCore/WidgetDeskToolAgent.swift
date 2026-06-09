@@ -12,6 +12,7 @@ public enum WidgetDeskToolAgentError: Error, CustomStringConvertible {
     case missingAssistantMessage
     case exceededTurnLimit
     case invalidToolArguments(String)
+    case buildFailed(String)
     case unsafePath(String)
 
     public var description: String {
@@ -28,6 +29,8 @@ public enum WidgetDeskToolAgentError: Error, CustomStringConvertible {
             return "The agent reached its turn limit before finishing."
         case .invalidToolArguments(let details):
             return "Invalid tool arguments: \(details)"
+        case .buildFailed(let details):
+            return "Widget build failed: \(details)"
         case .unsafePath(let path):
             return "Unsafe widget file path: \(path)"
         }
@@ -38,6 +41,7 @@ public struct WidgetDeskToolAgent: Sendable {
     private let settingsStore: WidgetDeskSettingsStore
     private let store: WidgetStore
     private let validator: WidgetComponentValidator
+    private let builder: WidgetComponentBuilder
     private let session: URLSession
     private let maxTurns: Int
 
@@ -50,6 +54,7 @@ public struct WidgetDeskToolAgent: Sendable {
         self.settingsStore = settingsStore
         self.store = store
         self.validator = WidgetComponentValidator(store: store)
+        self.builder = WidgetComponentBuilder(store: store)
         self.session = session
         self.maxTurns = maxTurns
     }
@@ -194,6 +199,9 @@ public struct WidgetDeskToolAgent: Sendable {
             case "edit_component_file":
                 let args = try decodeArguments(EditComponentFileArguments.self, from: toolCall)
                 return try editComponentFile(id: args.id, path: args.path, content: args.content)
+            case "build_component":
+                let args = try decodeArguments(BuildComponentArguments.self, from: toolCall)
+                return try buildComponent(id: args.id)
             case "set_component_visibility":
                 let args = try decodeArguments(SetComponentVisibilityArguments.self, from: toolCall)
                 return try setComponentVisibility(id: args.id, visible: args.visible)
@@ -263,6 +271,11 @@ public struct WidgetDeskToolAgent: Sendable {
         )
     }
 
+    private func buildComponent(id: String) throws -> ToolExecutionResult {
+        let report = try builder.build(id: id)
+        return ToolExecutionResult.json(report, changedWidgetIDs: [id])
+    }
+
     private func setComponentVisibility(id: String, visible: Bool) throws -> ToolExecutionResult {
         let widget = try store.setVisibility(id: id, visible: visible)
         return ToolExecutionResult.json(
@@ -304,14 +317,109 @@ public struct WidgetDeskToolAgent: Sendable {
         guard FileManager.default.fileExists(atPath: directory.path) else {
             return []
         }
-        return try FileManager.default.contentsOfDirectory(
+        return try recursiveFiles(in: directory).sorted()
+    }
+
+    private func recursiveFiles(in directory: URL) throws -> [String] {
+        guard let enumerator = FileManager.default.enumerator(
             at: directory,
             includingPropertiesForKeys: [.isRegularFileKey],
             options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        let root = directory.standardizedFileURL.path
+        return try enumerator.compactMap { item -> String? in
+            guard let url = item as? URL else {
+                return nil
+            }
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey])
+            guard values.isRegularFile == true else {
+                return nil
+            }
+            let path = url.standardizedFileURL.path
+            guard path.hasPrefix(root + "/") else {
+                return nil
+            }
+            return String(path.dropFirst(root.count + 1))
+        }
+    }
+}
+
+struct WidgetComponentBuildReport: Codable, Equatable, Sendable {
+    var ok: Bool
+    var id: String
+    var entry: String
+    var generatedFiles: [String]
+    var message: String
+}
+
+struct WidgetComponentBuilder: Sendable {
+    private let store: WidgetStore
+
+    init(store: WidgetStore = WidgetStore()) {
+        self.store = store
+    }
+
+    func build(id: String) throws -> WidgetComponentBuildReport {
+        try validateComponentID(id)
+        try store.ensureBaseDirectories()
+
+        let directory = store.paths.widgets.appendingPathComponent(id, isDirectory: true)
+        var manifest = try store.loadManifest(in: directory)
+        let source = directory.appendingPathComponent("source", isDirectory: true)
+        let main = source.appendingPathComponent("main.js")
+        let style = source.appendingPathComponent("style.css")
+
+        guard FileManager.default.fileExists(atPath: main.path) else {
+            throw WidgetDeskToolAgentError.buildFailed("source/main.js is required for source-based widgets")
+        }
+
+        let dist = directory.appendingPathComponent("dist", isDirectory: true)
+        try FileManager.default.createDirectory(at: dist, withIntermediateDirectories: true)
+
+        let styleTag = FileManager.default.fileExists(atPath: style.path)
+            ? #"    <link rel="stylesheet" href="../source/style.css">"#
+            : ""
+        let html = """
+        <!doctype html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+            html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
+            #app { width: 100%; height: 100%; }
+            </style>
+        \(styleTag)
+        </head>
+        <body>
+            <main id="app"></main>
+            <script type="module" src="../source/main.js"></script>
+        </body>
+        </html>
+        """
+
+        let index = dist.appendingPathComponent("index.html")
+        try html.write(to: index, atomically: true, encoding: .utf8)
+        manifest.entry = "dist/index.html"
+        try store.writeManifest(manifest, in: directory)
+
+        return WidgetComponentBuildReport(
+            ok: true,
+            id: id,
+            entry: manifest.entry,
+            generatedFiles: ["dist/index.html", "widget.json"],
+            message: "Built source/main.js into dist/index.html."
         )
-        .filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
-        .map(\.lastPathComponent)
-        .sorted()
+    }
+
+    private func validateComponentID(_ id: String) throws {
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
+        guard !id.isEmpty, id.rangeOfCharacter(from: allowed.inverted) == nil else {
+            throw WidgetDeskError.invalidWidgetID(id)
+        }
     }
 }
 
@@ -385,6 +493,7 @@ struct WidgetComponentValidator: Sendable {
 
         let html = try String(contentsOf: widget.entryURL, encoding: .utf8)
         issues.append(contentsOf: validateHTML(html))
+        issues.append(contentsOf: try validateLocalCodeFiles(in: widget.directory))
         return issues
     }
 
@@ -411,6 +520,37 @@ struct WidgetComponentValidator: Sendable {
 
         return issues
     }
+
+    private func validateLocalCodeFiles(in directory: URL) throws -> [String] {
+        guard let enumerator = FileManager.default.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        var issues: [String] = []
+        let root = directory.standardizedFileURL.path
+        for case let url as URL in enumerator {
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey])
+            guard values.isRegularFile == true else {
+                continue
+            }
+            let ext = url.pathExtension.lowercased()
+            guard ["html", "css", "js", "mjs"].contains(ext) else {
+                continue
+            }
+
+            let content = try String(contentsOf: url, encoding: .utf8).lowercased()
+            if content.contains("http://") || content.contains("https://") || content.contains("@import url(") {
+                let path = url.standardizedFileURL.path
+                let relative = path.hasPrefix(root + "/") ? String(path.dropFirst(root.count + 1)) : url.lastPathComponent
+                issues.append("\(relative) must not reference external network resources")
+            }
+        }
+        return issues
+    }
 }
 
 private extension WidgetDeskToolAgent {
@@ -426,6 +566,8 @@ private extension WidgetDeskToolAgent {
     - For existing components, call list_components first, then read_component_file before editing.
     - For new components, call edit_component_file for widget.json and index.html.
     - WidgetDesk widgets are HTML components, not Swift, Vue, or React projects. The completion baseline is that widget.json decodes and the entry HTML is complete, local-only, and loadable by WKWebView.
+    - For complex JavaScript or Three.js-style components, write source/main.js and optional source/style.css, then call build_component. The build step creates dist/index.html and updates widget.json entry.
+    - Do not use npm, package managers, CDNs, or external URLs. If a library is needed, it must be supplied as local files under vendor/ and imported by relative path.
     - Do not finish with plain text after editing. Continue using tools until validation accepts the changed component.
     - Always write lowercase kebab-case component ids.
     - Keep component HTML self-contained: no external scripts, fonts, images, or network resources.
@@ -528,6 +670,23 @@ private extension WidgetDeskToolAgent {
         ),
         ToolAgentTool(
             function: ToolAgentFunction(
+                name: "build_component",
+                description: "Build a source-based component by generating dist/index.html from source/main.js and optional source/style.css, then update widget.json entry.",
+                parameters: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "id": .object([
+                            "type": .string("string"),
+                            "description": .string("Component id.")
+                        ])
+                    ]),
+                    "required": .array([.string("id")]),
+                    "additionalProperties": .bool(false)
+                ])
+            )
+        ),
+        ToolAgentTool(
+            function: ToolAgentFunction(
                 name: "set_component_visibility",
                 description: "Show or hide an installed component by updating its manifest visibility.",
                 parameters: .object([
@@ -617,6 +776,10 @@ private struct EditComponentFileArguments: Decodable {
     var id: String
     var path: String
     var content: String
+}
+
+private struct BuildComponentArguments: Decodable {
+    var id: String
 }
 
 private struct SetComponentVisibilityArguments: Decodable {
