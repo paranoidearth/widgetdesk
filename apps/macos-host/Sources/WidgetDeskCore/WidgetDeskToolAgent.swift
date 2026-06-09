@@ -390,12 +390,26 @@ struct WidgetComponentBuilder: Sendable {
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <style>
             html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
-            #app { width: 100%; height: 100%; }
+            body { touch-action: none; user-select: none; }
+            #widgetdesk-orbit-viewport { width: 100%; height: 100%; perspective: 900px; overflow: hidden; cursor: grab; }
+            #widgetdesk-orbit-viewport.is-dragging { cursor: grabbing; }
+            #app {
+                width: 100%;
+                height: 100%;
+                transform-origin: 50% 50%;
+                transform-style: preserve-3d;
+                will-change: transform;
+            }
             </style>
         \(styleTag)
         </head>
         <body>
-            <main id="app"></main>
+            <main id="widgetdesk-orbit-viewport" aria-label="Interactive WidgetDesk scene viewport">
+                <section id="app"></section>
+            </main>
+            <script>
+        \(Self.orbitRuntime)
+            </script>
             <script type="module" src="../source/main.js"></script>
         </body>
         </html>
@@ -404,6 +418,7 @@ struct WidgetComponentBuilder: Sendable {
         let index = dist.appendingPathComponent("index.html")
         try html.write(to: index, atomically: true, encoding: .utf8)
         manifest.entry = "dist/index.html"
+        manifest.interactive = true
         try store.writeManifest(manifest, in: directory)
 
         return WidgetComponentBuildReport(
@@ -421,6 +436,159 @@ struct WidgetComponentBuilder: Sendable {
             throw WidgetDeskError.invalidWidgetID(id)
         }
     }
+
+    private static let orbitRuntime = #"""
+    (() => {
+        const viewport = document.getElementById('widgetdesk-orbit-viewport');
+        const root = document.getElementById('app');
+        if (!viewport || !root) return;
+
+        const listeners = new Set();
+        const pointers = new Map();
+        let lastDrag = null;
+        let lastPinchDistance = null;
+        const state = {
+            yaw: 0,
+            pitch: 0,
+            zoom: 1,
+            minZoom: 0.72,
+            maxZoom: 1.7,
+            dragging: false
+        };
+
+        const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+        const radians = degrees => degrees * Math.PI / 180;
+
+        function snapshot() {
+            return {
+                yaw: state.yaw,
+                pitch: state.pitch,
+                zoom: state.zoom,
+                dragging: state.dragging,
+                yawRadians: radians(state.yaw),
+                pitchRadians: radians(state.pitch)
+            };
+        }
+
+        function apply() {
+            state.pitch = clamp(state.pitch, -55, 55);
+            state.zoom = clamp(state.zoom, state.minZoom, state.maxZoom);
+            root.style.setProperty('--widgetdesk-orbit-yaw', `${state.yaw}deg`);
+            root.style.setProperty('--widgetdesk-orbit-pitch', `${state.pitch}deg`);
+            root.style.setProperty('--widgetdesk-orbit-zoom', String(state.zoom));
+            root.style.transform = `scale(${state.zoom}) rotateX(${state.pitch}deg) rotateY(${state.yaw}deg)`;
+
+            const detail = snapshot();
+            window.dispatchEvent(new CustomEvent('widgetdesk:orbit-change', { detail }));
+            for (const listener of listeners) listener(detail);
+        }
+
+        function setState(next = {}) {
+            if (Number.isFinite(next.yaw)) state.yaw = next.yaw;
+            if (Number.isFinite(next.pitch)) state.pitch = next.pitch;
+            if (Number.isFinite(next.zoom)) state.zoom = next.zoom;
+            apply();
+        }
+
+        window.WidgetDeskOrbit = {
+            get state() { return snapshot(); },
+            setState,
+            reset() {
+                state.yaw = 0;
+                state.pitch = 0;
+                state.zoom = 1;
+                apply();
+            },
+            subscribe(listener) {
+                if (typeof listener !== 'function') return () => {};
+                listeners.add(listener);
+                listener(snapshot());
+                return () => listeners.delete(listener);
+            },
+            applyToObject3D(object, options = {}) {
+                if (!object) return () => {};
+                const baseRotation = {
+                    x: object.rotation?.x || 0,
+                    y: object.rotation?.y || 0,
+                    z: object.rotation?.z || 0
+                };
+                return this.subscribe(({ yawRadians, pitchRadians, zoom }) => {
+                    if (object.rotation) {
+                        object.rotation.x = baseRotation.x + pitchRadians;
+                        object.rotation.y = baseRotation.y + yawRadians;
+                        object.rotation.z = baseRotation.z;
+                    }
+                    if (object.scale?.setScalar) {
+                        object.scale.setScalar(zoom);
+                    }
+                });
+            }
+        };
+
+        function distance(a, b) {
+            return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+        }
+
+        viewport.addEventListener('pointerdown', event => {
+            pointers.set(event.pointerId, event);
+            viewport.setPointerCapture?.(event.pointerId);
+            state.dragging = true;
+            viewport.classList.add('is-dragging');
+            lastDrag = { x: event.clientX, y: event.clientY };
+            lastPinchDistance = null;
+            apply();
+        });
+
+        viewport.addEventListener('pointermove', event => {
+            if (!pointers.has(event.pointerId)) return;
+            pointers.set(event.pointerId, event);
+            const active = Array.from(pointers.values());
+
+            if (active.length >= 2) {
+                const nextDistance = distance(active[0], active[1]);
+                if (lastPinchDistance !== null && nextDistance > 0) {
+                    state.zoom *= nextDistance / lastPinchDistance;
+                    apply();
+                }
+                lastPinchDistance = nextDistance;
+                return;
+            }
+
+            if (!lastDrag) return;
+            const dx = event.clientX - lastDrag.x;
+            const dy = event.clientY - lastDrag.y;
+            state.yaw += dx * 0.38;
+            state.pitch -= dy * 0.32;
+            lastDrag = { x: event.clientX, y: event.clientY };
+            apply();
+        });
+
+        function endPointer(event) {
+            pointers.delete(event.pointerId);
+            if (pointers.size === 0) {
+                state.dragging = false;
+                viewport.classList.remove('is-dragging');
+                lastDrag = null;
+                lastPinchDistance = null;
+                apply();
+            }
+        }
+
+        viewport.addEventListener('pointerup', endPointer);
+        viewport.addEventListener('pointercancel', endPointer);
+        viewport.addEventListener('lostpointercapture', endPointer);
+
+        viewport.addEventListener('wheel', event => {
+            event.preventDefault();
+            const delta = event.deltaY > 0 ? 0.94 : 1.06;
+            state.zoom *= delta;
+            apply();
+        }, { passive: false });
+
+        viewport.addEventListener('dblclick', () => window.WidgetDeskOrbit.reset());
+        apply();
+    })();
+    """#
 }
 
 struct WidgetComponentValidationReport: Equatable, Sendable {
@@ -566,7 +734,8 @@ private extension WidgetDeskToolAgent {
     - For existing components, call list_components first, then read_component_file before editing.
     - For new components, call edit_component_file for widget.json and index.html.
     - WidgetDesk widgets are HTML components, not Swift, Vue, or React projects. The completion baseline is that widget.json decodes and the entry HTML is complete, local-only, and loadable by WKWebView.
-    - For complex JavaScript or Three.js-style components, write source/main.js and optional source/style.css, then call build_component. The build step creates dist/index.html and updates widget.json entry.
+    - For complex JavaScript or Three.js-style components, write source/main.js and optional source/style.css, then call build_component. The build step creates dist/index.html, updates widget.json entry, marks the component interactive, and wraps #app in WidgetDesk's built-in orbit viewport.
+    - Source-built scene components already support system-level drag-to-rotate, wheel/pinch zoom, double-click reset, CSS variables, and a window.WidgetDeskOrbit API. Do not hand-roll pointer handlers for basic orbit controls. If using a custom renderer, subscribe to window.WidgetDeskOrbit or the widgetdesk:orbit-change event.
     - Do not use npm, package managers, CDNs, or external URLs. If a library is needed, it must be supplied as local files under vendor/ and imported by relative path.
     - Do not finish with plain text after editing. Continue using tools until validation accepts the changed component.
     - Always write lowercase kebab-case component ids.

@@ -196,10 +196,19 @@ struct WidgetComponentValidatorTests {
         let manifest = try fixture.store.loadManifest(
             in: fixture.paths.widgets.appendingPathComponent("source-widget", isDirectory: true)
         )
+        let index = try String(
+            contentsOf: fixture.paths.widgets
+                .appendingPathComponent("source-widget", isDirectory: true)
+                .appendingPathComponent("dist/index.html"),
+            encoding: .utf8
+        )
         let report = WidgetComponentValidator(store: fixture.store).validate(ids: ["source-widget"])
 
         #expect(build.entry == "dist/index.html")
         #expect(manifest.entry == "dist/index.html")
+        #expect(manifest.interactive)
+        #expect(index.contains("WidgetDeskOrbit"))
+        #expect(index.contains("widgetdesk:orbit-change"))
         #expect(report.isReady)
     }
 
