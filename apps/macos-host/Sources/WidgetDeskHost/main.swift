@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import Foundation
 import WebKit
 import WidgetDeskCore
@@ -764,6 +765,12 @@ private final class AssistantWindowController: NSWindowController, NSTextFieldDe
         promptField.becomeFirstResponder()
     }
 
+    func setPrompt(_ prompt: String) {
+        promptField.stringValue = prompt
+        renderState()
+        promptField.becomeFirstResponder()
+    }
+
     func setBusy(_ busy: Bool) {
         promptField.isEnabled = !busy
         settingsButton.isEnabled = !busy
@@ -1032,6 +1039,90 @@ private final class AssistantWindowController: NSWindowController, NSTextFieldDe
     }
 }
 
+private final class GlobalHotKeyController: @unchecked Sendable {
+    var onHotKey: (() -> Void)?
+
+    private var hotKeyRef: EventHotKeyRef?
+    private var eventHandlerRef: EventHandlerRef?
+
+    func start() throws {
+        var eventType = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard),
+            eventKind: UInt32(kEventHotKeyPressed)
+        )
+        let userData = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+        let handlerStatus = InstallEventHandler(
+            GetApplicationEventTarget(),
+            { _, _, userData in
+                guard let userData else {
+                    return noErr
+                }
+                let controller = Unmanaged<GlobalHotKeyController>.fromOpaque(userData).takeUnretainedValue()
+                DispatchQueue.main.async {
+                    controller.onHotKey?()
+                }
+                return noErr
+            },
+            1,
+            &eventType,
+            userData,
+            &eventHandlerRef
+        )
+        guard handlerStatus == noErr else {
+            throw NSError(
+                domain: "WidgetDesk.GlobalHotKey",
+                code: Int(handlerStatus),
+                userInfo: [NSLocalizedDescriptionKey: "Failed to install global hotkey handler."]
+            )
+        }
+
+        let hotKeyID = EventHotKeyID(signature: OSType(0x5744534B), id: 1)
+        let registerStatus = RegisterEventHotKey(
+            UInt32(kVK_Space),
+            UInt32(optionKey),
+            hotKeyID,
+            GetApplicationEventTarget(),
+            0,
+            &hotKeyRef
+        )
+        guard registerStatus == noErr else {
+            throw NSError(
+                domain: "WidgetDesk.GlobalHotKey",
+                code: Int(registerStatus),
+                userInfo: [NSLocalizedDescriptionKey: "Failed to register Option-Space global hotkey."]
+            )
+        }
+    }
+
+    deinit {
+        if let hotKeyRef {
+            UnregisterEventHotKey(hotKeyRef)
+        }
+        if let eventHandlerRef {
+            RemoveEventHandler(eventHandlerRef)
+        }
+    }
+}
+
+@MainActor
+private final class WidgetDeskApplicationDelegate: NSObject, NSApplicationDelegate {
+    private let host: WidgetDeskHostApp
+
+    init(host: WidgetDeskHostApp) {
+        self.host = host
+        super.init()
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        host.handleReopen()
+        return true
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        urls.forEach { host.handleURL($0) }
+    }
+}
+
 @MainActor
 private final class SettingsWindowController: NSWindowController {
     private let settingsStore: WidgetDeskSettingsStore
@@ -1189,6 +1280,7 @@ private final class WidgetDeskHostApp: NSObject {
     private var menuBar: MenuBarController?
     private var assistantWindow: AssistantWindowController?
     private var settingsWindow: SettingsWindowController?
+    private var hotKeyController: GlobalHotKeyController?
     private var timer: Timer?
     private var lastSignature = ""
     private var isGenerating = false
@@ -1215,6 +1307,7 @@ private final class WidgetDeskHostApp: NSObject {
             name: WidgetDeskNotifications.reloadWidgets,
             object: nil
         )
+        registerGlobalHotKey()
 
         let applicationMenu = ApplicationMenuController()
         applicationMenu.onNewWidget = { [weak self] in
@@ -1256,6 +1349,10 @@ private final class WidgetDeskHostApp: NSObject {
     }
 
     private func showAssistant() {
+        showAssistant(prefill: nil)
+    }
+
+    private func showAssistant(prefill: String?) {
         let assistant = assistantWindow ?? AssistantWindowController()
         assistant.onGenerate = { [weak self, weak assistant] prompt in
             self?.generateWidget(prompt: prompt, assistant: assistant)
@@ -1265,6 +1362,9 @@ private final class WidgetDeskHostApp: NSObject {
         }
         assistantWindow = assistant
         assistant.show()
+        if let prefill, !prefill.isEmpty {
+            assistant.setPrompt(prefill)
+        }
     }
 
     @objc private func showAssistantFromIntent() {
@@ -1281,7 +1381,70 @@ private final class WidgetDeskHostApp: NSObject {
         settings.show()
     }
 
-    private func generateWidget(prompt: String, assistant: AssistantWindowController?) {
+    func handleReopen() {
+        showAssistant()
+    }
+
+    func handleURL(_ url: URL) {
+        guard url.scheme?.lowercased() == "widgetdesk" else {
+            return
+        }
+
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let action = (url.host?.isEmpty == false ? url.host : url.pathComponents.dropFirst().first)?
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            .lowercased()
+        var query: [String: String] = [:]
+        (components?.queryItems ?? []).forEach { item in
+            if let value = item.value {
+                query[item.name.lowercased()] = value
+            }
+        }
+
+        switch action {
+        case "prompt", nil:
+            showAssistant(prefill: query["text"] ?? query["prompt"])
+        case "create":
+            let prompt = (query["text"] ?? query["prompt"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !prompt.isEmpty else {
+                showAssistant()
+                return
+            }
+            showAssistant(prefill: prompt)
+            generateWidget(prompt: prompt, systemPrompt: query["systemprompt"], assistant: assistantWindow)
+        case "show":
+            if let id = query["id"] {
+                setWidgetVisibility(id: id, visible: true)
+            }
+        case "hide":
+            if let id = query["id"] {
+                setWidgetVisibility(id: id, visible: false)
+            }
+        case "settings":
+            showSettings()
+        case "reload":
+            reloadWidgets()
+        case "folder", "widgets", "widgets-folder":
+            NSWorkspace.shared.open(WidgetDeskPaths.widgets)
+        default:
+            showAssistant()
+        }
+    }
+
+    private func registerGlobalHotKey() {
+        let controller = GlobalHotKeyController()
+        controller.onHotKey = { [weak self] in
+            self?.showAssistant()
+        }
+        do {
+            try controller.start()
+            hotKeyController = controller
+        } catch {
+            NSLog("WidgetDesk global hotkey disabled: \(error.localizedDescription)")
+        }
+    }
+
+    private func generateWidget(prompt: String, systemPrompt: String? = nil, assistant: AssistantWindowController?) {
         isGenerating = true
         assistant?.setBusy(true)
         assistant?.setStatus("Generating widget...")
@@ -1291,7 +1454,10 @@ private final class WidgetDeskHostApp: NSObject {
                 isGenerating = false
             }
             do {
-                let result = try await WidgetDeskToolAgent(settingsStore: settingsStore, store: store).run(prompt: prompt)
+                let result = try await WidgetDeskToolAgent(settingsStore: settingsStore, store: store).run(
+                    prompt: prompt,
+                    systemPrompt: systemPrompt
+                )
                 reloadWidgets()
                 assistant?.setBusy(false)
                 assistant?.setStatus(result.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Updated widget." : result.message)
@@ -1413,8 +1579,10 @@ app.applicationIconImage = WidgetDeskAppIcon.makeImage()
 
 do {
     let host = WidgetDeskHostApp()
+    let appDelegate = WidgetDeskApplicationDelegate(host: host)
+    app.delegate = appDelegate
     try host.start()
-    withExtendedLifetime(host) {
+    withExtendedLifetime((host, appDelegate)) {
         app.run()
     }
 } catch {

@@ -210,6 +210,19 @@ Implementation notes:
 - handle incoming URLs through `application(_:open:)`
 - route URL actions to the same host methods used by menus
 
+Implemented routes:
+
+```text
+widgetdesk://prompt?text=Create%20a%20clock
+widgetdesk://create?text=Create%20a%20clock
+widgetdesk://create?text=Create%20a%20clock&systemPrompt=Prefer%20small%20native-feeling%20widgets
+widgetdesk://show?id=pomodoro
+widgetdesk://hide?id=pomodoro
+widgetdesk://settings
+widgetdesk://reload
+widgetdesk://folder
+```
+
 实现要点：
 
 - 在 `Info.plist` 增加 `CFBundleURLTypes`
@@ -241,6 +254,8 @@ For WidgetDesk, prefer a tiny host-owned hotkey layer. Do not put hotkey logic i
 
 WidgetDesk 应优先在宿主层实现全局快捷键，不要把快捷键逻辑放进生成组件里。
 
+Implemented default: `Option + Space` via Carbon `RegisterEventHotKey`.
+
 ### 4. AppleScript Or CLI Bridge / AppleScript 或 CLI 桥接
 
 Keep the CLI as the stable automation bridge:
@@ -270,9 +285,9 @@ AppleScript 可以后续补，但第一版完整原生复刻不强依赖它。
 - [x] menu show/hide per widget
 - [x] Keychain API key storage
 - [x] App Intents for Shortcuts on Mac
-- [ ] URL scheme
-- [ ] global hotkey
-- [ ] packaged `.app` with Info.plist URL registration
+- [x] URL scheme
+- [x] global hotkey
+- [x] packaged `.app` with Info.plist URL registration
 
 ## Official References / 官方参考
 
