@@ -3,6 +3,12 @@ import Foundation
 import WebKit
 import WidgetDeskCore
 
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
+    }
+}
+
 @MainActor
 private final class DesktopWidgetWindow: NSWindow {
     var dragHandleFrame: NSRect = .zero
@@ -1032,6 +1038,7 @@ private final class SettingsWindowController: NSWindowController {
     private let baseURLField = NSTextField()
     private let modelField = NSTextField()
     private let apiKeyField = NSSecureTextField()
+    private let systemPromptView = NSTextView()
     private let statusLabel = NSTextField(labelWithString: "")
 
     init(settingsStore: WidgetDeskSettingsStore) {
@@ -1039,7 +1046,7 @@ private final class SettingsWindowController: NSWindowController {
 
         let contentView = NSView()
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 300),
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 410),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -1071,25 +1078,27 @@ private final class SettingsWindowController: NSWindowController {
         contentView.wantsLayer = true
 
         let titleLabel = NSTextField(labelWithString: "OpenAI-compatible provider")
-        titleLabel.frame = NSRect(x: 28, y: 246, width: 464, height: 28)
+        titleLabel.frame = NSRect(x: 28, y: 356, width: 504, height: 28)
         titleLabel.autoresizingMask = [.width, .minYMargin]
         titleLabel.font = .systemFont(ofSize: 20, weight: .semibold)
 
         let baseLabel = NSTextField(labelWithString: "Base URL")
         let modelLabel = NSTextField(labelWithString: "Model")
         let keyLabel = NSTextField(labelWithString: "API Key")
-        baseLabel.frame = NSRect(x: 28, y: 199, width: 86, height: 20)
-        modelLabel.frame = NSRect(x: 28, y: 157, width: 86, height: 20)
-        keyLabel.frame = NSRect(x: 28, y: 115, width: 86, height: 20)
-        [baseLabel, modelLabel, keyLabel].forEach {
+        let systemPromptLabel = NSTextField(labelWithString: "System Prompt")
+        baseLabel.frame = NSRect(x: 28, y: 309, width: 96, height: 20)
+        modelLabel.frame = NSRect(x: 28, y: 267, width: 96, height: 20)
+        keyLabel.frame = NSRect(x: 28, y: 225, width: 96, height: 20)
+        systemPromptLabel.frame = NSRect(x: 28, y: 183, width: 104, height: 20)
+        [baseLabel, modelLabel, keyLabel, systemPromptLabel].forEach {
             $0.autoresizingMask = [.maxXMargin, .minYMargin]
             $0.font = .systemFont(ofSize: 13, weight: .medium)
             $0.textColor = .secondaryLabelColor
         }
 
-        baseURLField.frame = NSRect(x: 126, y: 195, width: 366, height: 24)
-        modelField.frame = NSRect(x: 126, y: 153, width: 366, height: 24)
-        apiKeyField.frame = NSRect(x: 126, y: 111, width: 366, height: 24)
+        baseURLField.frame = NSRect(x: 138, y: 305, width: 394, height: 24)
+        modelField.frame = NSRect(x: 138, y: 263, width: 394, height: 24)
+        apiKeyField.frame = NSRect(x: 138, y: 221, width: 394, height: 24)
         [baseURLField, modelField, apiKeyField].forEach {
             $0.autoresizingMask = [.width, .minYMargin]
         }
@@ -1097,6 +1106,21 @@ private final class SettingsWindowController: NSWindowController {
         baseURLField.placeholderString = "https://api.openai.com/v1"
         modelField.placeholderString = "gpt-4.1-mini"
         apiKeyField.placeholderString = "sk-..."
+
+        let systemPromptScrollView = NSScrollView(frame: NSRect(x: 138, y: 92, width: 394, height: 112))
+        systemPromptScrollView.autoresizingMask = [.width, .minYMargin]
+        systemPromptScrollView.borderType = .bezelBorder
+        systemPromptScrollView.hasVerticalScroller = true
+        systemPromptScrollView.drawsBackground = true
+        systemPromptView.minSize = NSSize(width: 0, height: 112)
+        systemPromptView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        systemPromptView.isVerticallyResizable = true
+        systemPromptView.isHorizontallyResizable = false
+        systemPromptView.autoresizingMask = [.width]
+        systemPromptView.textContainer?.widthTracksTextView = true
+        systemPromptView.font = .systemFont(ofSize: 12)
+        systemPromptView.string = ""
+        systemPromptScrollView.documentView = systemPromptView
 
         let saveButton = NSButton(title: "Save", target: self, action: #selector(save))
         saveButton.frame = NSRect(x: 414, y: 28, width: 78, height: 32)
@@ -1112,7 +1136,8 @@ private final class SettingsWindowController: NSWindowController {
         let fields: [(NSTextField, NSView)] = [
             (baseLabel, baseURLField),
             (modelLabel, modelField),
-            (keyLabel, apiKeyField)
+            (keyLabel, apiKeyField),
+            (systemPromptLabel, systemPromptScrollView)
         ]
 
         [titleLabel, statusLabel, saveButton].forEach {
@@ -1129,6 +1154,7 @@ private final class SettingsWindowController: NSWindowController {
             let settings = try settingsStore.load()
             baseURLField.stringValue = settings.baseURL
             modelField.stringValue = settings.model
+            systemPromptView.string = settings.systemPrompt ?? ""
             apiKeyField.stringValue = try settingsStore.loadAPIKey()
             statusLabel.stringValue = "API key is stored in macOS Keychain."
         } catch {
@@ -1140,7 +1166,8 @@ private final class SettingsWindowController: NSWindowController {
         do {
             let settings = WidgetDeskLLMSettings(
                 baseURL: baseURLField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
-                model: modelField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                model: modelField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
+                systemPrompt: systemPromptView.string.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
             )
             try settingsStore.save(settings)
             try settingsStore.saveAPIKey(apiKeyField.stringValue)
@@ -1154,7 +1181,7 @@ private final class SettingsWindowController: NSWindowController {
 }
 
 @MainActor
-private final class WidgetDeskHostApp {
+private final class WidgetDeskHostApp: NSObject {
     private let store = WidgetStore()
     private let settingsStore = WidgetDeskSettingsStore()
     private var controllers: [WidgetWindowController] = []
@@ -1166,8 +1193,28 @@ private final class WidgetDeskHostApp {
     private var lastSignature = ""
     private var isGenerating = false
 
+    override init() {
+        super.init()
+    }
+
+    deinit {
+        DistributedNotificationCenter.default().removeObserver(self)
+    }
+
     func start() throws {
         try store.ensureBaseDirectories()
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(showAssistantFromIntent),
+            name: WidgetDeskNotifications.showPrompt,
+            object: nil
+        )
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(reloadWidgetsFromIntent),
+            name: WidgetDeskNotifications.reloadWidgets,
+            object: nil
+        )
 
         let applicationMenu = ApplicationMenuController()
         applicationMenu.onNewWidget = { [weak self] in
@@ -1218,6 +1265,14 @@ private final class WidgetDeskHostApp {
         }
         assistantWindow = assistant
         assistant.show()
+    }
+
+    @objc private func showAssistantFromIntent() {
+        showAssistant()
+    }
+
+    @objc private func reloadWidgetsFromIntent() {
+        reloadWidgets()
     }
 
     private func showSettings() {

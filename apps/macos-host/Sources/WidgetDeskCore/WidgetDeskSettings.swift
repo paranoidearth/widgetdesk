@@ -4,13 +4,16 @@ import Security
 public struct WidgetDeskLLMSettings: Codable, Equatable, Sendable {
     public var baseURL: String
     public var model: String
+    public var systemPrompt: String?
 
     public init(
         baseURL: String = "https://api.openai.com/v1",
-        model: String = "gpt-4.1-mini"
+        model: String = "gpt-4.1-mini",
+        systemPrompt: String? = nil
     ) {
         self.baseURL = baseURL
         self.model = model
+        self.systemPrompt = systemPrompt
     }
 }
 

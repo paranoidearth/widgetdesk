@@ -95,6 +95,26 @@ struct WidgetDeskAgentTests {
     }
 }
 
+@Suite("WidgetDeskSettings")
+struct WidgetDeskSettingsTests {
+    @Test("persists optional system prompt")
+    func persistsSystemPrompt() throws {
+        let fixture = try TestFixture()
+        defer { fixture.cleanup() }
+
+        let store = WidgetDeskSettingsStore(configURL: fixture.root.appendingPathComponent("llm-config.json"))
+        let settings = WidgetDeskLLMSettings(
+            baseURL: "https://example.test/v1",
+            model: "test-model",
+            systemPrompt: "Prefer dense code-component edits."
+        )
+
+        try store.save(settings)
+
+        #expect(try store.load() == settings)
+    }
+}
+
 @Suite("WidgetComponentValidator")
 struct WidgetComponentValidatorTests {
     @Test("accepts complete local HTML widgets")

@@ -11,6 +11,11 @@ public enum WidgetDeskPaths {
     public static let sampleWidget = widgets.appendingPathComponent("sample-clock", isDirectory: true)
 }
 
+public enum WidgetDeskNotifications {
+    public static let showPrompt = Notification.Name("com.paranoidearth.WidgetDesk.showPrompt")
+    public static let reloadWidgets = Notification.Name("com.paranoidearth.WidgetDesk.reloadWidgets")
+}
+
 public struct WidgetDeskPathSet: Equatable, Sendable {
     public var appSupport: URL
     public var widgets: URL

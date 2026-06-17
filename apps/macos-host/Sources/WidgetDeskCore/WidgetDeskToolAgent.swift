@@ -59,7 +59,7 @@ public struct WidgetDeskToolAgent: Sendable {
         self.maxTurns = maxTurns
     }
 
-    public func run(prompt: String) async throws -> WidgetDeskToolAgentResult {
+    public func run(prompt: String, systemPrompt: String? = nil) async throws -> WidgetDeskToolAgentResult {
         let settings = try settingsStore.load()
         let apiKey = try settingsStore.loadAPIKey().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !apiKey.isEmpty else {
@@ -67,7 +67,10 @@ public struct WidgetDeskToolAgent: Sendable {
         }
 
         var messages: [ToolAgentMessage] = [
-            ToolAgentMessage(role: "system", content: Self.systemPrompt),
+            ToolAgentMessage(
+                role: "system",
+                content: Self.systemPrompt(injectedPrompts: [settings.systemPrompt, systemPrompt])
+            ),
             ToolAgentMessage(role: "user", content: prompt)
         ]
         var changedWidgetIDs = Set<String>()
@@ -757,7 +760,24 @@ struct WidgetComponentValidator: Sendable {
 }
 
 private extension WidgetDeskToolAgent {
-    static let systemPrompt = """
+    static func systemPrompt(injectedPrompts: [String?] = []) -> String {
+        let additions = injectedPrompts
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard !additions.isEmpty else {
+            return baseSystemPrompt
+        }
+
+        return """
+        \(baseSystemPrompt)
+
+        Additional caller-provided system instructions:
+        \(additions.joined(separator: "\n\n---\n\n"))
+        """
+    }
+
+    static let baseSystemPrompt = """
     You are WidgetDesk's local component agent. Work by calling tools, not by inventing unseen files.
 
     WidgetDesk components live under ~/Library/Application Support/WidgetDesk/widgets/<id>/.

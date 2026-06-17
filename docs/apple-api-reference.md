@@ -145,6 +145,20 @@ Recommended intents:
 | `HideWidgetIntent` | Hide one widget by id |
 | `OpenWidgetsFolderIntent` | Open the widget directory in Finder |
 
+Implemented intent coverage:
+
+- `ShowPromptIntent`
+- `CreateWidgetIntent` with optional per-run system prompt injection
+- `ListWidgetsIntent`
+- `ShowWidgetIntent`
+- `HideWidgetIntent`
+- `BuildWidgetIntent`
+- `DeleteWidgetIntent`
+- `OpenWidgetsFolderIntent`
+- `ReloadWidgetsIntent`
+
+`WidgetDeskAppShortcuts` exposes prompt, list, folder, and reload actions as system Shortcuts entries.
+
 Minimal shape:
 
 ```swift
@@ -255,7 +269,7 @@ AppleScript 可以后续补，但第一版完整原生复刻不强依赖它。
 - [x] persisted widget position
 - [x] menu show/hide per widget
 - [x] Keychain API key storage
-- [ ] App Intents for Shortcuts on Mac
+- [x] App Intents for Shortcuts on Mac
 - [ ] URL scheme
 - [ ] global hotkey
 - [ ] packaged `.app` with Info.plist URL registration
