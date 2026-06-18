@@ -49,17 +49,6 @@ cat >"$APP_DIR/Contents/Info.plist" <<PLIST
   <string>$APP_NAME</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
-  <key>CFBundleURLTypes</key>
-  <array>
-    <dict>
-      <key>CFBundleURLName</key>
-      <string>$BUNDLE_ID</string>
-      <key>CFBundleURLSchemes</key>
-      <array>
-        <string>widgetdesk</string>
-      </array>
-    </dict>
-  </array>
   <key>CFBundleShortVersionString</key>
   <string>0.1.0</string>
   <key>CFBundleVersion</key>
